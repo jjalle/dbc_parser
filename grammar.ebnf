@@ -1,0 +1,194 @@
+@@grammar::DBC
+
+dbc_file =
+    version:version
+    new_symbols
+    bit_timing
+    nodes:nodes
+    value_tables:value_tables
+    messages:messages
+    message_transmitters
+    environment_variables:environment_variables
+    environment_variables_data:environment_variables_data
+    signal_types:signal_types
+    comments:comments
+    attribute_definitions:attribute_definitions
+    attribute_defaults:attribute_defaults
+    attribute_values:attribute_values
+    value_descriptions:value_descriptions
+    signal_type_refs:signal_type_refs
+    signal_groups:signal_groups $ ;
+
+version = [ 'VERSION' CANdb_version_string ] ;
+
+CANdb_version_string = char_string ;
+
+new_symbols = [ 'NS_' ':' ['NS_DESC_'] ['CM_'] ['BA_DEF_'] ['BA_'] ['VAL_'] ['CAT_DEF_'] ['CAT_'] ['FILTER'] ['BA_DEF_DEF_'] ['EV_DATA_'] ['ENVVAR_DATA_'] ['SGTYPE_'] ['SGTYPE_VAL_'] ['BA_DEF_SGTYPE_'] ['BA_SGTYPE_'] ['SIG_TYPE_REF_'] ['VAL_TABLE_'] ['SIG_GROUP_'] ['SIG_VALTYPE_'] ['SIGTYPE_VALTYPE_'] ['BO_TX_BU_'] ['BA_DEF_REL_'] ['BA_REL_'] ['BA_DEF_DEF_REL_'] ['BU_SG_REL_'] ['BU_EV_REL_'] ['BU_BO_REL_'] ['SG_MUL_VAL_'] ] ;
+
+bit_timing = 'BS_:' [baudrate ':' BTR1 ',' BTR2 ] ;
+
+baudrate = unsigned_integer ;
+
+BTR1 = unsigned_integer ;
+
+BTR2 = unsigned_integer ;
+
+nodes = 'BU_:' node_names:{node_name} ;
+
+node_name = C_identifier ;
+
+value_tables = {value_table} ;
+
+value_table = 'VAL_TABLE_' value_table_name {value_description} ';' ;
+
+messages = {message} ;
+
+message = 'BO_' message_id:message_id message_name:message_name ':' message_size:message_size transmitter:transmitter signals:{signal} ;
+
+signal = 'SG_' signal_name:signal_name multiplexer_indicator ':' start_bit:start_bit '|' signal_size:signal_size '@' byte_order:byte_order value_type:value_type '(' factor:factor ',' offset:offset ')' '[' minimum:minimum '|' maximum:maximum ']' unit:unit receivers:receiver_list ;
+
+receiver_list = @+:receiver {',' @+:receiver}* ;
+
+multiplexer_indicator = ['M' | ('m' multiplexer_switch_value) ] ;
+
+multiplexer_switch_value = unsigned_integer ;
+
+message_size = unsigned_integer ;
+
+transmitter = node_name | 'Vector__XXX' ;
+
+start_bit = unsigned_integer ;
+
+signal_size = unsigned_integer ;
+
+byte_order = '0' | '1' ; # 0=little endian, 1=big endian
+
+value_type = '+' | '-' ; # +=unsigned, -=signed
+
+factor = double ;
+
+offset = double ;
+
+unit = char_string ;
+
+receiver = node_name | 'Vector__XXX' ;
+
+message_transmitters = {message_transmitter} ;
+
+message_transmitter = 'BO_TX_BU_' message_id ':' {transmitter} ';' ;
+
+environment_variables = {environment_variable} ;
+
+environment_variable = 'EV_' env_var_name ':' env_var_type '[' minimum '|' maximum ']' unit initial_value ev_id access_type access_node {',' access_node } ';' ;
+
+env_var_type = '0' | '1' | '2' ;
+
+initial_value = double ;
+
+ev_id = unsigned_integer ;
+
+access_type = 'DUMMY_NODE_VECTOR0' | 'DUMMY_NODE_VECTOR1' | 'DUMMY_NODE_VECTOR2' | 'DUMMY_NODE_VECTOR3' | 'DUMMY_NODE_VECTOR8000' ;
+
+access_node = node_name | 'VECTOR_XXX' ;
+
+environment_variables_data = { environment_variable_data } ;
+
+environment_variable_data = 'ENVVAR_DATA_' env_var_name ':' data_size ';' ;
+
+data_size = unsigned_integer ;
+
+value_descriptions = { value_descriptions_for_signal | value_descriptions_for_env_var } ;
+
+value_descriptions_for_signal = 'VAL_' message_id signal_name { value_description } ';' ;
+
+value_descriptions_for_env_var = 'VAL_' env_var_name { value_description } ';' ;
+
+value_description = double char_string ;
+
+signal_types = {signal_type} ;
+
+signal_type = 'SGTYPE_' signal_type_name ':' signal_size '@' byte_order value_type '(' factor ',' offset ')' '[' minimum '|' maximum ']' unit default_value ',' signal_value_table ';' ;
+
+signal_type_name = C_identifier ;
+
+default_value = double ;
+
+signal_value_table = value_table_name ;
+
+signal_type_refs = {signal_type_ref|signal_extended_value_type_list} ;
+
+signal_type_ref = 'SGTYPE_' message_id signal_name ':' signal_type_name ';' ;
+
+signal_extended_value_type_list = 'SIG_VALTYPE_' message_id signal_name [':'] signal_extended_value_type ';' ;
+
+signal_extended_value_type = '0' | '1' | '2' | '3' ; 
+
+signal_groups = {signal_group} ;
+
+signal_group = 'SIG_GROUP_' message_id signal_group_name repetitions ':' { signal_name } ';' ;
+
+signal_group_name = C_identifier ;
+
+repetitions = unsigned_integer ;
+
+comments = {comment} ;
+
+comment = 'CM_' (char_string | 'BU_' node_name char_string | 'BO_' message_id char_string | 'SG_' message_id signal_name char_string | 'EV_' env_var_name char_string) ';' ;
+
+attribute_definitions = {attribute_definition | attribute_definition_rel} ;
+
+attribute_definition = 'BA_DEF_' (attribute_name attribute_value_type | object_type attribute_name attribute_value_type) ';' ;
+
+object_type = 'BU_' | 'BO_' | 'SG_' | 'EV_' ;
+
+attribute_name = '"' name:C_identifier '"' ;
+
+attribute_definition_rel = 'BA_DEF_REL_' attribute_rel_type attribute_name attribute_value_type ';' ;
+
+attribute_value_type = 'INT' signed_integer signed_integer | 'HEX' signed_integer signed_integer | 'FLOAT' double double | 'STRING' | 'ENUM' [char_string {',' char_string}] ;
+
+attribute_defaults = {attribute_default} ;
+
+attribute_default = ('BA_DEF_DEF_REL_' | 'BA_DEF_DEF_' ) attribute_name attribute_value ';' ;
+
+attribute_value = unsigned_integer | signed_integer | double | char_string ;
+
+attribute_values = {attribute_value_for_object|attribute_value_rel_for_object} ;
+
+attribute_value_for_object = 'BA_' attribute_name (attribute_value | 'BU_' node_name attribute_value | 'BO_' message_id attribute_value | 'SG_' message_id signal_name attribute_value | 'EV_' env_var_name attribute_value) ';' ;
+
+attribute_value_rel_for_object = 'BA_REL_' attribute_name attribute_rel_type node_name (attribute_value | 'BU_' node_name attribute_value | 'BO_' message_id attribute_value | 'SG_' message_id signal_name attribute_value | 'EV_' env_var_name attribute_value) ';' ;
+
+attribute_rel_type = 'BU_SG_REL_' | 'BU_EV_REL_' | 'BU_BO_REL_' ;
+
+value_table_name = C_identifier ;
+
+message_id = unsigned_integer ;
+
+message_name = C_identifier ;
+
+signal_name = C_identifier ;
+
+env_var_name = C_identifier ;
+
+minimum = double ;
+
+maximum = double ;
+
+C_identifier = /(?!(?:BU_|BO_|SG_|EV_|VAL_TABLE_|CM_|BA_DEF_))[_a-zA-Z][-_a-zA-Z0-9]*/ ;
+
+char_string = /\"[^\"]*\"/ ;
+
+sign = /[+-]/ ;
+
+unsigned_integer = /[0-9]+/ ;
+
+signed_integer = [sign] unsigned_integer ;
+
+float = signed_integer [ '.' unsigned_integer ] ;
+
+exponent = /[Ee]/ ;
+
+double = float [ exponent signed_integer ] ;
+#double = /[+-]?([0-9]*[.])?[0-9]+/ ;
+#double = /([+-]?(?:[0-9]+\.?|[0-9]*\.[0-9]+))(?:[Ee][+-]?[0-9]+)?/ ;
