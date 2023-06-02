@@ -8,6 +8,8 @@ from tatsu import to_python_sourcecode
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+__grammar_model = None
+
 class DbcAttributeType(abc.ABC):
     def __init__(self):
         pass
@@ -23,26 +25,26 @@ class DbcAttributeType(abc.ABC):
         return False
 
 class DbcIntegerType(DbcAttributeType):
-    def __init__(self, min: int, max: int):
+    def __init__(self, mininum: int, maximum: int):
         super().__init__()
-        self.min = min
-        self.max = max
+        self.mininum = mininum
+        self.maximum = maximum
     def is_integer(self) -> bool:
         return True
 
 class DbcFloatType(DbcAttributeType):
-    def __init__(self, min: float, max: float):
+    def __init__(self, mininum: float, maximum: float):
         super().__init__()
-        self.min = min
-        self.max = max
+        self.mininum = mininum
+        self.maximum = maximum
     def is_float(self) -> bool:
         return True
 
 class DbcHexType(DbcAttributeType):
-    def __init__(self, min: int, max: int):
+    def __init__(self, mininum: int, maximum: int):
         super().__init__()
-        self.min = min
-        self.max = max
+        self.mininum = mininum
+        self.maximum = maximum
     def is_hex(self) -> bool:
         return True
 
@@ -77,6 +79,8 @@ class DbcAttribute:
         self.value_type = value_type
         self.object_type = object_type
         self.default: DbcAttributeValue = None
+    def has_default(self) -> bool:
+        return self.default is not None
     def __repr__(self) -> str:
         return f"DbcAttribute:{self.name}"
     def __str__(self) -> str:
@@ -133,18 +137,42 @@ class DbcSignal:
         self.minimum = minimum
         self.maximum = maximum
         self.unit = unit
+        self.receivers: List[DbcNode] = list()
         self.attributes: Dict[str, DbcAttributeValue] = dict()
+        self.node_attributes: Dict[str, Dict[str, DbcAttributeValue]] = dict()
         self.description: str = "N/A"
         self.value_descriptions: List[Tuple[float, str]] = list()
+    def _add_receiver(self, node: DbcNode):
+        self.receivers.append(node)
     def add_attribute(self, attr: DbcAttributeValue):
         if attr.name in self.attributes:
-            raise RuntimeError(f"Attribute {attr.name} already in signal {self.name}")
+            curr_attr = self.attributes[attr.name]
+            if attr.value != curr_attr.value:
+                raise RuntimeError(f"Attribute {attr.name} already in signal {self.name}")
+            else:
+                return
         self.attributes[attr.name] = attr
+    def add_node_attribute(self, node: str, attr: DbcAttributeValue):
+        if attr.name in self.node_attributes:
+            if node in self.node_attributes[attr.name]:
+                curr_attr = self.node_attributes[attr.name][node]
+                if attr.value != curr_attr.value:
+                    raise RuntimeError(f"Attribute {attr.name} already in signal {self.name}")
+                else:
+                    return
+        if not attr.name in self.node_attributes:
+            self.node_attributes[attr.name] = dict()
+        self.node_attributes[attr.name][node] = attr
     def has_attribute(self, name: str) -> bool:
         return name in self.attributes
     def get_attribute(self, name: str) -> DbcAttributeValue:
         attr = self.attributes[name]
         return attr
+    def has_node_attribute(self, name: str) -> bool:
+        return name in self.node_attributes
+    def get_node_attribute(self, name: str) -> Dict[str, DbcAttributeValue]:
+        attr_dict = self.node_attributes[name]
+        return attr_dict
     def add_value_description(self, val: float, label: str):
         self.value_descriptions.append((val, label))
     def __repr__(self) -> str:
@@ -165,7 +193,7 @@ class DbcSignalGroup:
         return f"DbcSignalGroup:{self.name}"
 
 class DbcMessage:
-    def __init__(self, message_id: int, message_name: str, message_size: int, transmitter: str):
+    def __init__(self, message_id: int, message_name: str, message_size: int, transmitter: DbcNode):
         self.id = message_id
         self.name = message_name
         self.size = message_size
@@ -173,16 +201,37 @@ class DbcMessage:
         self.transmitter = transmitter
         self.signals_by_name: Dict[str, DbcSignal] = dict()
         self.attributes: Dict[str, DbcAttributeValue] = dict()
+        self.node_attributes: Dict[str, Dict[str, DbcAttributeValue]] = dict()
         self.signal_groups: List[DbcSignalGroup] = list()
     def add_attribute(self, attr: DbcAttributeValue):
         if attr.name in self.attributes:
-            raise RuntimeError(f"Attribute {attr.name} already in message {self.name}")
+            curr_attr = self.attributes[attr.name]
+            if attr.value != curr_attr.value:
+                raise RuntimeError(f"Attribute {attr.name} already in message {self.name}")
+            else:
+                return
         self.attributes[attr.name] = attr
+    def add_node_attribute(self, node: str, attr: DbcAttributeValue):
+        if attr.name in self.node_attributes:
+            if node in self.node_attributes[attr.name]:
+                curr_attr = self.node_attributes[attr.name][node]
+                if attr.value != curr_attr.value:
+                    raise RuntimeError(f"Attribute {attr.name} already in message {self.name}")
+                else:
+                    return
+        if not attr.name in self.node_attributes:
+            self.node_attributes[attr.name] = dict()
+        self.node_attributes[attr.name][node] = attr
     def has_attribute(self, name: str) -> bool:
         return name in self.attributes
     def get_attribute(self, name: str) -> DbcAttributeValue:
         attr = self.attributes[name]
         return attr
+    def has_node_attribute(self, name: str) -> bool:
+        return name in self.node_attributes
+    def get_node_attribute(self, name: str) -> Dict[str, DbcAttributeValue]:
+        attr_dict = self.node_attributes[name]
+        return attr_dict
     def _add_signal(self, signal: DbcSignal):
         if signal.name in self.signals_by_name:
             raise RuntimeError(f"Signal {signal.name} already in message {self.name}")
@@ -223,19 +272,40 @@ class DbcEnvironmentVariable:
         self.access_nodes: List[DbcNode] = list()
         self.description: str = "N/A"
         self.attributes: Dict[str, DbcAttributeValue] = dict()
+        self.node_attributes: Dict[str, Dict[str, DbcAttributeValue]] = dict()
         self.value_descriptions: List[Tuple[float, str]] = list()
         self.data_size: int = 0
     def _add_access_node(self, node: DbcNode):
         self.access_nodes.append(node)
     def add_attribute(self, attr: DbcAttributeValue):
         if attr.name in self.attributes:
-            raise RuntimeError(f"Attribute {attr.name} already in evar {self.name}")
+            curr_attr = self.attributes[attr.name]
+            if attr.value != curr_attr.value:
+                raise RuntimeError(f"Attribute {attr.name} already in envvar {self.name}")
+            else:
+                return
         self.attributes[attr.name] = attr
+    def add_node_attribute(self, node: str, attr: DbcAttributeValue):
+        if attr.name in self.node_attributes:
+            if node in self.node_attributes[attr.name]:
+                curr_attr = self.node_attributes[attr.name][node]
+                if attr.value != curr_attr.value:
+                    raise RuntimeError(f"Attribute {attr.name} already in envvar {self.name}")
+                else:
+                    return
+        if not attr.name in self.node_attributes:
+            self.node_attributes[attr.name] = dict()
+        self.node_attributes[attr.name][node] = attr
     def has_attribute(self, name: str) -> bool:
         return name in self.attributes
     def get_attribute(self, name: str) -> DbcAttributeValue:
         attr = self.attributes[name]
         return attr
+    def has_node_attribute(self, name: str) -> bool:
+        return name in self.node_attributes
+    def get_node_attribute(self, name: str) -> Dict[str, DbcAttributeValue]:
+        attr_dict = self.node_attributes[name]
+        return attr_dict
     def add_value_description(self, val: float, label: str):
         self.value_descriptions.append((val, label))
     def __repr__(self) -> str:
@@ -246,11 +316,9 @@ class DbcEnvironmentVariable:
 class DbcValueTable:
     def __init__(self, name: str):
         self.name = name
-        self.values: Dict[str, float] = dict()
+        self.values: List[Tuple[str, float]] = list()
     def _add_value(self, value: float, label: str):
-        if label in self.values:
-            raise RuntimeError(f"Label {label} already in value table")
-        self.values[label] = value
+        self.values.append((label, value))
 
 class DbcFile:
     def __init__(self):
@@ -299,16 +367,22 @@ class DbcFile:
         return name in self.nodes_by_name
     def get_node(self, name: str) -> DbcNode:
         return self.nodes_by_name[name]
+    def get_nodes(self) -> List[DbcNode]:
+        return list(self.nodes_by_name.values())
     def has_message(self, id: int) -> bool:
         return id in self.messages_by_id
     def get_message(self, id: int) -> DbcMessage:
         return self.messages_by_id[id]
+    def get_messages(self) -> List[DbcMessage]:
+        return list(self.messages_by_id.values())
     def has_value_table(self, name: str) -> bool:
         return name in self.value_tables_by_name
     def get_value_table(self, name: str) -> DbcValueTable:
         return self.value_tables_by_name[name]
     def get_environment_variable(self, name: str) -> DbcEnvironmentVariable:
         return self.environment_variables_by_name[name]
+    def get_environment_variables(self) -> List[DbcEnvironmentVariable]:
+        return list(self.environment_variables_by_name.values())
     def __repr__(self) -> str:
         return f"DbcFile:{self.version}"
     def __str__(self) -> str:
@@ -453,7 +527,7 @@ class DbcFactory:
         name = parsed_node
         node = DbcNode(name)
         return node
-    def create_signal(self, parsed_signal) -> DbcSignal:
+    def create_signal(self, parsed_signal, dbc: DbcFile) -> DbcSignal:
         signal_name = parsed_signal["signal_name"]
         start_bit = read_int(parsed_signal["start_bit"])
         signal_size = read_int(parsed_signal["signal_size"])
@@ -465,19 +539,28 @@ class DbcFactory:
         maximum = read_float_with_default(parsed_signal["maximum"], None)
         unit = read_char_string(parsed_signal["unit"])
         signal = DbcSignal(signal_name, start_bit, signal_size, byte_order, value_type, factor, offset, minimum, maximum, unit)
+        receivers = parsed_signal["receivers"]
+        for receiver in receivers:
+            if receiver != "Vector__XXX":
+                anode = dbc.nodes_by_name[receiver]
+                signal._add_receiver(anode)
         return signal
-    def create_message(self, parsed_message) -> DbcMessage:
+    def create_message(self, parsed_message, dbc: DbcFile) -> DbcMessage:
         message_id = read_int(parsed_message["message_id"])
         message_name = parsed_message["message_name"]
         message_size = read_int(parsed_message["message_size"])
-        transmitter = parsed_message["transmitter"]
+        msg_node = parsed_message["transmitter"]
+        if msg_node != 'Vector__XXX':
+            transmitter = dbc.nodes_by_name[msg_node]
+        else:
+            transmitter = None
         message = DbcMessage(message_id, message_name, message_size, transmitter)
         parsed_signals = parsed_message["signals"]
         for parsed_signal in parsed_signals:
-            signal = self.create_signal(parsed_signal)
+            signal = self.create_signal(parsed_signal, dbc)
             message._add_signal(signal)
         return message
-    def create_environment_variable(self, parsed_ev, nodes_by_name: Dict[str, DbcNode]) -> DbcEnvironmentVariable:
+    def create_environment_variable(self, parsed_ev, dbc: DbcFile) -> DbcEnvironmentVariable:
         ev_name = parsed_ev[1]
         ev_type = read_env_var_type(parsed_ev[3])
         ev_min = read_float_with_default(parsed_ev[5], None)
@@ -487,14 +570,14 @@ class DbcFactory:
         ev_id = read_int(parsed_ev[11])
         ev_atype = read_env_var_access_type(parsed_ev[12])
         ev = DbcEnvironmentVariable(ev_name, ev_type, 0, ev_min, ev_max, ev_unit, ev_ival, ev_id, ev_atype)
-        ev_anode = parsed_ev[13]
-        if ev_anode != "Vector__XXX":
-            anode = nodes_by_name[ev_anode]
-            ev._add_access_node(anode)
-        ev_anodes = parsed_ev[14]
+        ev_anodes = parsed_ev[13]
         for ev_anode in ev_anodes:
             if ev_anode != "Vector__XXX":
-                anode = nodes_by_name[ev_anode]
+                if dbc.has_node(ev_anode):
+                    anode = dbc.get_node(ev_anode)
+                else:
+                    anode = self.create_node(ev_anode)
+                    dbc._add_node(anode)
                 ev._add_access_node(anode)
         return ev
     def _process_comments(self, ast, dbc: DbcFile) -> DbcFile:
@@ -540,13 +623,13 @@ class DbcFactory:
     def _process_messages(self, ast, dbc: DbcFile) -> DbcFile:
         messages = ast["messages"]
         for message in messages:
-            frame = self.create_message(message)
+            frame = self.create_message(message, dbc)
             dbc._add_message(frame)
         return dbc
     def _process_environment_variables(self, ast, dbc: DbcFile) -> DbcFile:
         evs = ast["environment_variables"]
         for ev in evs:
-            evar = self.create_environment_variable(ev, dbc.nodes_by_name)
+            evar = self.create_environment_variable(ev, dbc)
             dbc._add_environment_variable(evar)
         return dbc
     def _process_environment_variables_data(self, ast, dbc: DbcFile) -> DbcFile:
@@ -669,11 +752,11 @@ class DbcFactory:
                 if object_type1 == "BU_BO_REL_" and object_type2 == "BO_":
                     msg_id = read_int(attribute_value[5])
                     msg = dbc.get_message(msg_id)
-                    print(f"Warning! Attribute {attr.name}:{attr_value.value} for node {node.name} and message {msg.name} ignored")
+                    msg.add_node_attribute(node_name, attr_value)
                 elif object_type1 == "BU_EV_REL_" and object_type2 == "EV_":
                     ev_name = attribute_value[5]
                     ev = dbc.get_environment_variable(ev_name)
-                    print(f"Warning! Attribute {attr.name}:{attr_value.value} for node {node.name} and ev {ev.name} ignored")
+                    ev.add_node_attribute(node_name, attr_value)
                 else:
                     raise RuntimeError(f"Unexpected object {object_type1} for attribute value")
             elif attr_type == "BA_REL_" and len(attribute_value) == 9:
@@ -688,7 +771,7 @@ class DbcFactory:
                     msg = dbc.get_message(msg_id)
                     sig_name = attribute_value[6]
                     sig = msg.get_signal(sig_name)
-                    print(f"Warning! Attribute {attr.name}:{attr_value.value} for node {node.name} and signal {sig.name} ignored")
+                    sig.add_node_attribute(node_name, attr_value)
                 else:
                     raise RuntimeError(f"Unexpected object {object_type1} for attribute value")
             else:
@@ -750,9 +833,9 @@ class DbcFactory:
                 vt._add_value(val, label)
             dbc._add_value_table(vt)
         return dbc
-    def create_dbc(self, grammar: str, text: str) -> DbcFile:
+    def create_dbc(self, model, text: str) -> DbcFile:
         dbc = DbcFile()
-        ast = tatsu_parse(grammar, text)
+        ast = model.parse(text)
         dbc = self._process_version(ast, dbc)
         dbc = self._process_nodes(ast, dbc)
         dbc = self._process_value_tables(ast, dbc)
@@ -766,7 +849,7 @@ class DbcFactory:
         dbc = self._process_signal_groups(ast, dbc)
         return dbc
 
-def parse_dbc(filename: str) -> Dict[str, DbcMessage]:
+def parse_dbc(filename: str) -> DbcFile:
     dbc = Path(filename)
     if not dbc.exists():
         raise RuntimeError(f"Wrong DBC path {dbc}")
@@ -775,19 +858,23 @@ def parse_dbc(filename: str) -> Dict[str, DbcMessage]:
     return parse_text(text)
 
 def parse_text(text: str) -> DbcFile:
+    global __grammar_model
     factory = DbcFactory()
-    grammar_file = Path('grammar.ebnf')
-    if not grammar_file.exists():
-        raise RuntimeError(f"Wrong grammar file {grammar_file}")
-    grammar = grammar_file.read_text()
-    dbc = factory.create_dbc(grammar, text)
+    if __grammar_model is None:
+        grammar_file = Path(__file__).resolve().parent / 'grammar.ebnf'
+        if not grammar_file.exists():
+            raise RuntimeError(f"Wrong grammar file {grammar_file}")
+        grammar = grammar_file.read_text()
+        model = tatsu_compile(grammar)
+        __grammar_model = model
+    dbc = factory.create_dbc(__grammar_model, text)
     return dbc
 
-def main():
-    parse_dbc("")
+def main(dbc: str):
+    parse_dbc(dbc)
 
 if __name__ == '__main__':
-    #parser = argparse.ArgumentParser(description = '')
-    #parser.add_argument('dbc', help='Input DBC')
-    #args = parser.parse_args()
-    main()
+    parser = argparse.ArgumentParser(description = '')
+    parser.add_argument('dbc', help='Input DBC')
+    args = parser.parse_args()
+    main(args.dbc)

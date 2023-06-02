@@ -23,7 +23,7 @@ version = [ 'VERSION' CANdb_version_string ] ;
 
 CANdb_version_string = char_string ;
 
-new_symbols = [ 'NS_' ':' ['NS_DESC_'] ['CM_'] ['BA_DEF_'] ['BA_'] ['VAL_'] ['CAT_DEF_'] ['CAT_'] ['FILTER'] ['BA_DEF_DEF_'] ['EV_DATA_'] ['ENVVAR_DATA_'] ['SGTYPE_'] ['SGTYPE_VAL_'] ['BA_DEF_SGTYPE_'] ['BA_SGTYPE_'] ['SIG_TYPE_REF_'] ['VAL_TABLE_'] ['SIG_GROUP_'] ['SIG_VALTYPE_'] ['SIGTYPE_VALTYPE_'] ['BO_TX_BU_'] ['BA_DEF_REL_'] ['BA_REL_'] ['BA_DEF_DEF_REL_'] ['BU_SG_REL_'] ['BU_EV_REL_'] ['BU_BO_REL_'] ['SG_MUL_VAL_'] ] ;
+new_symbols = [ 'NS_' ':' ['NS_DESC_'] ['CM_'] ['BA_DEF_'] ['BA_'] ['VAL_'] ['CAT_DEF_'] ['CAT_'] ['FILTER'] ['BA_DEF_DEF_'] ['EV_DATA_'|'EV_DATA'] ['ENVVAR_DATA_'] ['SGTYPE_'] ['SGTYPE_VAL_'] ['BA_DEF_SGTYPE_'] ['BA_SGTYPE_'] ['SIG_TYPE_REF_'] ['VAL_TABLE_'] ['SIG_GROUP_'] ['SIG_VALTYPE_'] ['SIGTYPE_VALTYPE_'] ['BO_TX_BU_'] ['BA_DEF_REL_'] ['BA_REL_'] ['BA_DEF_DEF_REL_'] ['BU_SG_REL_'] ['BU_EV_REL_'] ['BU_BO_REL_'] ['SG_MUL_VAL_'] ] ;
 
 bit_timing = 'BS_:' [baudrate ':' BTR1 ',' BTR2 ] ;
 
@@ -75,11 +75,15 @@ receiver = node_name | 'Vector__XXX' ;
 
 message_transmitters = {message_transmitter} ;
 
-message_transmitter = 'BO_TX_BU_' message_id ':' {transmitter} ';' ;
+message_transmitter = 'BO_TX_BU_' message_id ':' transmitter_list ';' ;
+
+transmitter_list = transmitter {',' transmitter}* ;
 
 environment_variables = {environment_variable} ;
 
-environment_variable = 'EV_' env_var_name ':' env_var_type '[' minimum '|' maximum ']' unit initial_value ev_id access_type access_node {',' access_node } ';' ;
+environment_variable = 'EV_' env_var_name ':' env_var_type '[' minimum '|' maximum ']' unit initial_value ev_id access_type access_node_list ';' ;
+
+access_node_list = @+:access_node {',' @+:access_node}* ;
 
 env_var_type = '0' | '1' | '2' ;
 
@@ -165,15 +169,17 @@ value_table_name = C_identifier ;
 
 message_id = unsigned_integer ;
 
-message_name = C_identifier ;
+message_name = C_name_identifier ;
 
-signal_name = C_identifier ;
+signal_name = C_name_identifier ;
 
-env_var_name = C_identifier ;
+env_var_name = C_name_identifier ;
 
 minimum = double ;
 
 maximum = double ;
+
+C_name_identifier = /[_a-zA-Z][-_a-zA-Z0-9]*/ ;
 
 C_identifier = /(?!(?:BU_|BO_|SG_|EV_|VAL_TABLE_|CM_|BA_DEF_))[_a-zA-Z][-_a-zA-Z0-9]*/ ;
 

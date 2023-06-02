@@ -21,6 +21,88 @@ BU_:
     dbc = parse_text(text)
     assert dbc.version == "TEST"
 
+def test_ns(setup: Setup):
+    text = r'''
+VERSION "TEST"
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_:
+'''
+    dbc = parse_text(text)
+    assert dbc.version == "TEST"
+
+def test_ns_with_typo(setup: Setup):
+    text = r'''
+VERSION "TEST"
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_:
+'''
+    dbc = parse_text(text)
+    assert dbc.version == "TEST"
+
 def test_node(setup: Setup):
     text = r'''
 BS_:
@@ -46,10 +128,38 @@ VAL_TABLE_ vtname 1 "LABEL1" 2 "LABEL2";
     dbc = parse_text(text)
     assert dbc.has_value_table("vtname")
     vt = dbc.get_value_table("vtname")
-    assert "LABEL1" in vt.values
-    assert "LABEL2" in vt.values
-    assert vt.values["LABEL1"] == 1
-    assert vt.values["LABEL2"] == 2
+    assert len(vt.values) == 2
+    label1, val1 = vt.values[0]
+    label2, val2 = vt.values[1]
+    assert "LABEL1" == label1
+    assert "LABEL2" == label2
+    assert val1 == 1
+    assert val2 == 2
+
+def test_value_table_duplicated(setup: Setup):
+    text = r'''
+BS_:
+
+BU_: NODE1 NODE2
+
+VAL_TABLE_ vtname 1 "LABEL1" 2 "LABEL2" 3 "Not used" 4 "Not used";
+'''
+    dbc = parse_text(text)
+    assert dbc.has_value_table("vtname")
+    vt = dbc.get_value_table("vtname")
+    assert len(vt.values) == 4
+    label1, val1 = vt.values[0]
+    label2, val2 = vt.values[1]
+    label3, val3 = vt.values[2]
+    label4, val4 = vt.values[3]
+    assert "LABEL1" == label1
+    assert "LABEL2" == label2
+    assert "Not used" == label3
+    assert "Not used" == label4
+    assert val1 == 1
+    assert val2 == 2
+    assert val3 == 3
+    assert val4 == 4
 
 
 def test_comment(setup: Setup):
@@ -134,6 +244,7 @@ BO_ 123 MESSAGE1: 8 NODE1
     assert msg.name == "MESSAGE1"
     assert msg.id == 123
     assert msg.size == 8
+    assert msg.transmitter.name == "NODE1"
     assert len(msg.signals_by_name) == 2
 
 def test_message2(setup: Setup):
@@ -151,14 +262,31 @@ BO_ 123 MESSAGE1: 8 NODE1
     assert msg.size == 8
     assert len(msg.signals_by_name) == 0
 
+def test_message_transmitter(setup: Setup):
+    text = r'''
+BS_:
+
+BU_: NODE1 NODE2 NODE3
+
+BO_ 123 MESSAGE1: 8 NODE1
+
+BO_TX_BU_ 123 : NODE2,NODE3;
+'''
+    dbc = parse_text(text)
+    msg = dbc.get_message(123)
+    assert msg.name == "MESSAGE1"
+    assert msg.id == 123
+    assert msg.size == 8
+    assert len(msg.signals_by_name) == 0
+
 def test_signal(setup: Setup):
     text = r'''
 BS_:
 
-BU_: NODE1 NODE2
+BU_: NODE1 NODE2 NODE3
 
 BO_ 123 MESSAGE1: 8 NODE1
- SG_ SIGNAL11 : 18|2@1+ (1,0) [0|10] ""  NODE2
+ SG_ SIGNAL11 : 18|2@1+ (1,0) [0|10] ""  NODE2,NODE3
 '''
     dbc = parse_text(text)
     msg = dbc.get_message(123)
@@ -172,6 +300,9 @@ BO_ 123 MESSAGE1: 8 NODE1
     assert sig.maximum == 10
     assert sig.start_bit == 18
     assert sig.size == 2
+    assert len(sig.receivers) == 2
+    assert sig.receivers[0].name == "NODE2"
+    assert sig.receivers[1].name == "NODE3"
 
 def test_signal_value_description(setup: Setup):
     text = r'''
@@ -208,6 +339,22 @@ SIG_VALTYPE_ 123 SIGNAL11 : 2;
     dbc = parse_text(text)
     msg = dbc.get_message(123)
     sig = msg.get_signal("SIGNAL11")
+    assert sig.value_type == DbcSignalValueType.FLOAT64
+
+def test_signal_cm_name(setup: Setup):
+    text = r'''
+BS_:
+
+BU_: NODE1 NODE2
+
+BO_ 123 MESSAGE1: 8 NODE1
+ SG_ CM_SIGNAL11 : 18|2@1+ (1,0) [0|10] ""  NODE2
+
+SIG_VALTYPE_ 123 CM_SIGNAL11 : 2;
+'''
+    dbc = parse_text(text)
+    msg = dbc.get_message(123)
+    sig = msg.get_signal("CM_SIGNAL11")
     assert sig.value_type == DbcSignalValueType.FLOAT64
 
 def test_ev(setup: Setup):
@@ -264,6 +411,48 @@ ENVVAR_DATA_ EVAR1: 6;
     ev = dbc.get_environment_variable("EVAR1")
     assert ev.type == DbcEnvironmentVariableType.DATA
     assert ev.data_size == 6
+
+def test_ev_name_with_ev(setup: Setup):
+    text = r'''
+BS_:
+
+BU_: NODE1
+
+EV_ EV_EVAR1: 0 [-10|10] "UNIT" 0 1 DUMMY_NODE_VECTOR0  NODE1;
+'''
+    dbc = parse_text(text)
+    ev = dbc.get_environment_variable("EV_EVAR1")
+    assert ev.name == "EV_EVAR1"
+
+def test_ev_missing_node(setup: Setup):
+    text = r'''
+BS_:
+
+BU_: NODE1
+
+EV_ EVAR1: 0 [-10|10] "UNIT" 0 1 DUMMY_NODE_VECTOR0  NODE2;
+'''
+    dbc = parse_text(text)
+    ev = dbc.get_environment_variable("EVAR1")
+    assert len(ev.access_nodes) == 1
+    node = ev.access_nodes[0]
+    assert node.name == "NODE2"
+
+def test_ev_multiple_node(setup: Setup):
+    text = r'''
+BS_:
+
+BU_: NODE1 NODE2
+
+EV_ EVAR1: 0 [-10|10] "UNIT" 0 1 DUMMY_NODE_VECTOR0  NODE1,NODE2;
+'''
+    dbc = parse_text(text)
+    ev = dbc.get_environment_variable("EVAR1")
+    assert len(ev.access_nodes) == 2
+    node1 = ev.access_nodes[0]
+    assert node1.name == "NODE1"
+    node2 = ev.access_nodes[1]
+    assert node2.name == "NODE2"
 
 def test_attribute(setup: Setup):
     text = r'''
@@ -329,6 +518,31 @@ BA_ "ATTR" SG_ 123 SIGNAL11 2660;
     assert attr.attribute.value_type.is_integer()
     assert attr.attribute.object_type == DbcAttributeObjectType.SIGNAL
 
+def test_attribute_signal_dup(setup: Setup):
+    text = r'''
+BS_:
+
+BU_: NODE1 NODE2
+
+BO_ 123 MESSAGE1: 8 NODE1
+ SG_ SIGNAL11 : 18|2@1+ (1,0) [0|10] ""  NODE2
+
+BA_DEF_ SG_  "ATTR" INT 0 0;
+BA_DEF_DEF_  "ATTR" 0;
+BA_ "ATTR" SG_ 123 SIGNAL11 2660;
+BA_ "ATTR" SG_ 123 SIGNAL11 2660;
+'''
+    dbc = parse_text(text)
+    msg = dbc.get_message(123)
+    sig = msg.get_signal("SIGNAL11")
+    assert sig.has_attribute("ATTR")
+    attr = sig.get_attribute("ATTR")
+    assert attr.name == "ATTR"
+    assert attr.value == 2660
+    assert attr.attribute.default.value == 0
+    assert attr.attribute.value_type.is_integer()
+    assert attr.attribute.object_type == DbcAttributeObjectType.SIGNAL
+
 def test_attribute_ev(setup: Setup):
     text = r'''
 BS_:
@@ -350,3 +564,55 @@ BA_ "ATTR" EV_ EVAR1 2660;
     assert attr.attribute.default.value == 0
     assert attr.attribute.value_type.is_integer()
     assert attr.attribute.object_type == DbcAttributeObjectType.ENVIRONMENT_VARIABLE
+
+def test_attribute_node_signal(setup: Setup):
+    text = r'''
+BS_:
+
+BU_: NODE1 NODE2
+
+BO_ 123 MESSAGE1: 8 NODE1
+ SG_ SIGNAL11 : 18|2@1+ (1,0) [0|10] ""  NODE2
+
+BA_DEF_REL_ BU_SG_REL_  "ATTR" INT 0 65535;
+BA_DEF_DEF_REL_ "ATTR" 0;
+BA_REL_ "ATTR" BU_SG_REL_ NODE1 SG_ 123 SIGNAL11 3000;
+BA_REL_ "ATTR" BU_SG_REL_ NODE2 SG_ 123 SIGNAL11 4000;
+'''
+    dbc = parse_text(text)
+    msg = dbc.get_message(123)
+    sig = msg.get_signal("SIGNAL11")
+    assert sig.has_node_attribute("ATTR")
+    attrs = sig.get_node_attribute("ATTR")
+    assert "NODE1" in attrs
+    assert "NODE2" in attrs
+    attr1 = attrs["NODE1"]
+    attr2 = attrs["NODE2"]
+    assert attr1.name == "ATTR"
+    assert attr1.value == 3000
+    assert attr2.name == "ATTR"
+    assert attr2.value == 4000
+
+def test_attribute_node_signal_dup(setup: Setup):
+    text = r'''
+BS_:
+
+BU_: NODE1 NODE2
+
+BO_ 123 MESSAGE1: 8 NODE1
+ SG_ SIGNAL11 : 18|2@1+ (1,0) [0|10] ""  NODE2
+
+BA_DEF_REL_ BU_SG_REL_  "ATTR" INT 0 65535;
+BA_DEF_DEF_REL_ "ATTR" 0;
+BA_REL_ "ATTR" BU_SG_REL_ NODE1 SG_ 123 SIGNAL11 3000;
+BA_REL_ "ATTR" BU_SG_REL_ NODE1 SG_ 123 SIGNAL11 3000;
+'''
+    dbc = parse_text(text)
+    msg = dbc.get_message(123)
+    sig = msg.get_signal("SIGNAL11")
+    assert sig.has_node_attribute("ATTR")
+    attrs = sig.get_node_attribute("ATTR")
+    assert "NODE1" in attrs
+    attr1 = attrs["NODE1"]
+    assert attr1.name == "ATTR"
+    assert attr1.value == 3000
